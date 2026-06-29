@@ -13,7 +13,7 @@ import paho.mqtt.client as mqtt
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqlogs")
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 # --- Config ---
 MQTT_HOST     = os.environ.get("MQTT_HOST", "localhost")
