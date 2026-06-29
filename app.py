@@ -13,7 +13,7 @@ import paho.mqtt.client as mqtt
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqlogs")
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 # --- Config ---
 MQTT_HOST     = os.environ.get("MQTT_HOST", "localhost")
@@ -28,6 +28,8 @@ MAX_ROWS           = int(os.environ.get("MAX_ROWS", 1_000_000))
 RETENTION_INTERVAL = int(os.environ.get("RETENTION_INTERVAL", 300))
 WEB_PORT      = int(os.environ.get("WEB_PORT", 8080))
 MAX_PAYLOAD   = int(os.environ.get("MAX_PAYLOAD", 8192))
+# Pre-fill the UI search field on startup (e.g. "shellies/" to show only Shelly devices)
+UI_DEFAULT_FILTER = os.environ.get("UI_DEFAULT_FILTER", "")
 
 app = Flask(__name__)
 
@@ -252,7 +254,7 @@ def api_stream():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", default_filter=UI_DEFAULT_FILTER, version=VERSION)
 
 
 # --- Boot ---

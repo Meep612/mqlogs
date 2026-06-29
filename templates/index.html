@@ -47,8 +47,9 @@
   button { cursor: pointer; }
   button:hover { background: var(--border); }
 
-  #search-input { width: 200px; }
-  #topic-input  { width: 160px; }
+  /* Single search field, wider */
+  #search-input { width: 280px; }
+  #search-input.has-filter { border-color: var(--accent); background: #1a2133; }
 
   .presets { display: flex; gap: 4px; }
   .preset-btn { padding: 4px 8px; font-size: 12px; }
@@ -146,10 +147,11 @@
 
 <header>
   <h1>mqlogs</h1>
-  <span id="version-badge"></span>
+  <span id="version-badge">{{ version }}</span>
 
-  <input id="search-input" type="text" placeholder="Search topic or payload…" autocomplete="off">
-  <input id="topic-input"  type="text" placeholder="Filter topic…" autocomplete="off">
+  <!-- Single search field: filters topic AND payload -->
+  <input id="search-input" type="text" placeholder="Filter topics &amp; messages…"
+         value="{{ default_filter }}" autocomplete="off">
 
   <div class="presets">
     <button class="preset-btn" data-h="1">1h</button>
@@ -180,23 +182,23 @@
 function topicColor(topic) {
   let h = 0;
   for (let i = 0; i < topic.length; i++) h = (h * 31 + topic.charCodeAt(i)) & 0xffffffff;
-  const hue = Math.abs(h) % 360;
-  return `hsl(${hue},60%,65%)`;
+  return `hsl(${Math.abs(h) % 360},60%,65%)`;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────
 let liveOn   = true;
 let eventSrc = null;
-let minId    = null;   // for keyset pagination (load more)
-let sinceTs  = null;   // epoch seconds, null = no filter
+let minId    = null;
+let sinceTs  = null;
 
 const container  = document.getElementById("log-container");
 const emptyState = document.getElementById("empty-state");
+const searchInput = document.getElementById("search-input");
+
 const loadMoreBtn = document.createElement("button");
 loadMoreBtn.id = "load-more";
-loadMoreBtn.className = "load-more";
 loadMoreBtn.textContent = "Load more";
-loadMoreBtn.onclick = loadMore;
+loadMoreBtn.onclick = () => fetchHistory(true);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmtTs(epoch) {
@@ -206,11 +208,15 @@ function fmtTs(epoch) {
   });
 }
 
-function getFilters() {
-  return {
-    q:     document.getElementById("search-input").value.trim(),
-    topic: document.getElementById("topic-input").value.trim(),
-  };
+function getFilter() {
+  return searchInput.value.trim();
+}
+
+// Check if a message matches the current filter (client-side guard)
+function matchesFilter(msg) {
+  const f = getFilter().toLowerCase();
+  if (!f) return true;
+  return msg.topic.toLowerCase().includes(f) || msg.payload.toLowerCase().includes(f);
 }
 
 function buildRow(msg) {
@@ -257,10 +263,9 @@ function showError(msg) {
 
 // ── Search / history ───────────────────────────────────────────────────────
 async function fetchHistory(appendBottom = false) {
-  const f = getFilters();
+  const q = getFilter();
   const params = new URLSearchParams({ limit: 100 });
-  if (f.q)     params.set("q",     f.q);
-  if (f.topic) params.set("topic", f.topic);
+  if (q)       params.set("q", q);
   if (sinceTs) params.set("since", sinceTs);
   if (appendBottom && minId) params.set("before_id", minId);
 
@@ -269,73 +274,56 @@ async function fetchHistory(appendBottom = false) {
     const rows = await res.json();
 
     if (!appendBottom) {
-      // Clear existing rows (keep empty-state)
       [...container.querySelectorAll(".log-row, #load-more, .error-msg")].forEach(el => el.remove());
       minId = null;
     }
 
-    if (rows.length === 0 && !appendBottom) {
-      showEmpty(true);
-      return;
-    }
+    if (rows.length === 0 && !appendBottom) { showEmpty(true); return; }
     showEmpty(false);
 
     rows.forEach(msg => {
       const row = buildRow(msg);
-      if (appendBottom) {
-        container.insertBefore(row, loadMoreBtn);
-      } else {
-        container.appendChild(row);
-      }
+      if (appendBottom) container.insertBefore(row, loadMoreBtn);
+      else              container.appendChild(row);
       if (minId === null || msg.id < minId) minId = msg.id;
     });
 
-    // Show load-more if we got a full page
-    if (rows.length === 100) {
-      container.appendChild(loadMoreBtn);
-    } else {
-      loadMoreBtn.remove();
-    }
+    if (rows.length === 100) container.appendChild(loadMoreBtn);
+    else                     loadMoreBtn.remove();
   } catch (e) {
     showError("Search error: " + e.message);
   }
 }
 
-function loadMore() {
-  fetchHistory(true);
-}
-
 // ── Live SSE ───────────────────────────────────────────────────────────────
 function connectSSE() {
   if (eventSrc) { eventSrc.close(); eventSrc = null; }
-  const f = getFilters();
+  const q = getFilter();
   const params = new URLSearchParams();
-  if (f.q)     params.set("q",     f.q);
-  if (f.topic) params.set("topic", f.topic);
+  if (q) params.set("q", q);  // server-side pre-filter
 
   eventSrc = new EventSource(`/api/stream?${params}`);
+
   eventSrc.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "connected") {
       document.getElementById("live-indicator").classList.add("visible");
       return;
     }
-    // Check time filter client-side
+    // Client-side guard: double-check filter + time window
+    if (!matchesFilter(msg)) return;
     if (sinceTs && msg.ts < sinceTs) return;
 
     showEmpty(false);
     const row = buildRow(msg);
-    // Prepend at top
     const firstRow = container.querySelector(".log-row");
-    if (firstRow) {
-      container.insertBefore(row, firstRow);
-    } else {
-      container.insertBefore(row, container.firstChild);
-    }
+    if (firstRow) container.insertBefore(row, firstRow);
+    else          container.insertBefore(row, container.firstChild);
   };
+
   eventSrc.onerror = () => {
     document.getElementById("live-indicator").classList.remove("visible");
-    setTimeout(connectSSE, 3000);
+    setTimeout(() => { if (liveOn) connectSSE(); }, 3000);
   };
 }
 
@@ -356,7 +344,42 @@ async function refreshStats() {
   } catch (_) {}
 }
 
+// ── Debounce utility ───────────────────────────────────────────────────────
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+// ── Apply filter (search + reconnect SSE) ─────────────────────────────────
+function applyFilter() {
+  const hasFilter = getFilter().length > 0;
+  searchInput.classList.toggle("has-filter", hasFilter);
+  fetchHistory();
+  if (liveOn) connectSSE();
+}
+
+const applyFilterDebounced = debounce(applyFilter, 400);
+
 // ── Controls ───────────────────────────────────────────────────────────────
+
+// Search input: debounced on typing, immediate on Enter
+searchInput.addEventListener("input", applyFilterDebounced);
+searchInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") { clearTimeout(); applyFilter(); }
+});
+
+// Preset buttons
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
+    this.classList.add("active");
+    const h = parseInt(this.dataset.h);
+    sinceTs = h ? (Date.now() / 1000 - h * 3600) : null;
+    applyFilter();
+  });
+});
+
+// Live toggle
 document.getElementById("live-toggle").addEventListener("click", function() {
   liveOn = !liveOn;
   if (liveOn) {
@@ -370,38 +393,18 @@ document.getElementById("live-toggle").addEventListener("click", function() {
   }
 });
 
+// Clear
 document.getElementById("clear-btn").addEventListener("click", () => {
   [...container.querySelectorAll(".log-row, #load-more, .error-msg")].forEach(el => el.remove());
   showEmpty(true);
   minId = null;
 });
 
-// Preset buttons
-document.querySelectorAll(".preset-btn").forEach(btn => {
-  btn.addEventListener("click", function() {
-    document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
-    this.classList.add("active");
-    const h = parseInt(this.dataset.h);
-    sinceTs = h ? (Date.now() / 1000 - h * 3600) : null;
-    fetchHistory();
-    if (liveOn) connectSSE();  // resync live stream with new time filter
-  });
-});
-
-// Search on Enter / topic on Enter — also reconnect SSE with new filters
-["search-input", "topic-input"].forEach(id => {
-  document.getElementById(id).addEventListener("keydown", e => {
-    if (e.key === "Enter") {
-      fetchHistory();
-      if (liveOn) connectSSE();  // resync live stream with new filters
-    }
-  });
-});
-
 // ── Init ───────────────────────────────────────────────────────────────────
-fetch("/api/version").then(r => r.json()).then(d => {
-  document.getElementById("version-badge").textContent = "v" + d.version;
-}).catch(() => {});
+// Apply default filter from server (UI_DEFAULT_FILTER env var)
+if (searchInput.value) {
+  searchInput.classList.add("has-filter");
+}
 
 fetchHistory();
 connectSSE();

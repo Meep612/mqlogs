@@ -50,6 +50,7 @@ docker compose up -d
 | `RETENTION_INTERVAL` | `300`           | Retention cleanup interval in seconds            |
 | `WEB_PORT`           | `8080`          | Web server port                                  |
 | `MAX_PAYLOAD`        | `8192`          | Truncate payloads larger than N bytes            |
+| `UI_DEFAULT_FILTER`  | *(empty)*       | Pre-fill the search field on startup (e.g. `shellies/`) |
 
 ## API
 
