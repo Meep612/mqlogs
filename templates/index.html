@@ -382,13 +382,17 @@ document.querySelectorAll(".preset-btn").forEach(btn => {
     const h = parseInt(this.dataset.h);
     sinceTs = h ? (Date.now() / 1000 - h * 3600) : null;
     fetchHistory();
+    if (liveOn) connectSSE();  // resync live stream with new time filter
   });
 });
 
-// Search on Enter / topic on Enter
+// Search on Enter / topic on Enter — also reconnect SSE with new filters
 ["search-input", "topic-input"].forEach(id => {
   document.getElementById(id).addEventListener("keydown", e => {
-    if (e.key === "Enter") fetchHistory();
+    if (e.key === "Enter") {
+      fetchHistory();
+      if (liveOn) connectSSE();  // resync live stream with new filters
+    }
   });
 });
 
