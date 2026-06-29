@@ -8,8 +8,8 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE:    ghcr.io/${{ github.repository_owner }}/mqlogs
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/mqlogs
+  DH_IMAGE:   dimlam/mqlogs
 
 jobs:
   build:
@@ -31,15 +31,24 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DH_IMAGE }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
