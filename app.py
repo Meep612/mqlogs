@@ -13,6 +13,8 @@ import paho.mqtt.client as mqtt
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqlogs")
 
+VERSION = "1.0.1"
+
 # --- Config ---
 MQTT_HOST     = os.environ.get("MQTT_HOST", "localhost")
 MQTT_PORT     = int(os.environ.get("MQTT_PORT", 1883))
@@ -165,6 +167,10 @@ def mqtt_loop():
 @app.route("/healthz")
 def healthz():
     return "ok", 200
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"version": VERSION})
 
 @app.route("/api/stats")
 def api_stats():

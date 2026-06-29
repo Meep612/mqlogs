@@ -30,7 +30,8 @@
     gap: 12px;
     flex-wrap: wrap;
   }
-  header h1 { font-size: 16px; font-weight: 600; color: var(--accent); margin-right: 8px; flex-shrink: 0; }
+  header h1 { font-size: 16px; font-weight: 600; color: var(--accent); margin-right: 4px; flex-shrink: 0; }
+  #version-badge { font-size: 10px; color: var(--dim); align-self: center; margin-right: 8px; flex-shrink: 0; }
 
   input, select, button {
     background: var(--bg);
@@ -145,6 +146,7 @@
 
 <header>
   <h1>mqlogs</h1>
+  <span id="version-badge"></span>
 
   <input id="search-input" type="text" placeholder="Search topic or payload…" autocomplete="off">
   <input id="topic-input"  type="text" placeholder="Filter topic…" autocomplete="off">
@@ -397,6 +399,10 @@ document.querySelectorAll(".preset-btn").forEach(btn => {
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────
+fetch("/api/version").then(r => r.json()).then(d => {
+  document.getElementById("version-badge").textContent = "v" + d.version;
+}).catch(() => {});
+
 fetchHistory();
 connectSSE();
 refreshStats();
