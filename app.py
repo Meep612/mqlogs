@@ -13,7 +13,7 @@ import paho.mqtt.client as mqtt
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("mqlogs")
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 # --- Config ---
 MQTT_HOST     = os.environ.get("MQTT_HOST", "localhost")
@@ -41,9 +41,10 @@ _sse_lock = threading.Lock()
 # --- Database ---
 
 def db_connect():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=15)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=10000")  # wait up to 10s instead of failing immediately
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -71,13 +72,26 @@ _write_lock = threading.Lock()
 def db_insert(ts, topic, payload, qos, retain):
     global _write_conn
     with _write_lock:
-        if _write_conn is None:
-            _write_conn = db_connect()
-        _write_conn.execute(
-            "INSERT INTO messages(ts, topic, payload, qos, retain) VALUES(?,?,?,?,?)",
-            (ts, topic, payload, qos, retain)
-        )
-        _write_conn.commit()
+        for attempt in range(3):
+            try:
+                if _write_conn is None:
+                    _write_conn = db_connect()
+                _write_conn.execute(
+                    "INSERT INTO messages(ts, topic, payload, qos, retain) VALUES(?,?,?,?,?)",
+                    (ts, topic, payload, qos, retain)
+                )
+                _write_conn.commit()
+                return
+            except sqlite3.OperationalError as e:
+                log.warning("DB write attempt %d failed: %s", attempt + 1, e)
+                # Reset connection so it is recreated on next attempt
+                try:
+                    _write_conn.close()
+                except Exception:
+                    pass
+                _write_conn = None
+                time.sleep(0.5 * (attempt + 1))
+        log.error("DB write failed after 3 attempts, message dropped")
 
 
 # --- Retention ---
@@ -128,7 +142,11 @@ def on_message(client, userdata, msg):
     qos     = msg.qos
     retain  = int(msg.retain)
 
-    db_insert(ts, topic, payload, qos, retain)
+    try:
+        db_insert(ts, topic, payload, qos, retain)
+    except Exception as e:
+        # Never let a DB error crash the MQTT callback
+        log.error("on_message DB error (message lost): %s", e)
 
     event = {"id": None, "ts": ts, "topic": topic, "payload": payload,
              "qos": qos, "retain": retain}
