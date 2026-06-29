@@ -1,0 +1,33 @@
+services:
+  mqlogs:
+    image: ghcr.io/meep612/mqlogs:latest
+    container_name: mqlogs
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - mqlogs-data:/data
+    environment:
+      MQTT_HOST: 192.168.1.1        # your broker
+      MQTT_PORT: 1883
+      # MQTT_USER: user
+      # MQTT_PASS: pass
+      MQTT_TOPIC: "#"
+      RETENTION_DAYS: 14
+      MAX_ROWS: 1000000
+      WEB_PORT: 8080
+
+  # --- Optional: local Mosquitto broker (uncomment to use) ---
+  # mosquitto:
+  #   image: eclipse-mosquitto:2
+  #   container_name: mosquitto
+  #   restart: unless-stopped
+  #   ports:
+  #     - "1883:1883"
+  #   volumes:
+  #     - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+  #     - mosquitto-data:/mosquitto/data
+
+volumes:
+  mqlogs-data:
+  # mosquitto-data:

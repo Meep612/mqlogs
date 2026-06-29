@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mqlogs</title>
+<style>
+  :root {
+    --bg:      #161616;
+    --surface: #262626;
+    --border:  #393939;
+    --text:    #f4f4f4;
+    --dim:     #8d8d8d;
+    --accent:  #78a9ff;
+    --green:   #42be65;
+    --orange:  #ff832b;
+    --red:     #fa4d56;
+    --mono:    'IBM Plex Mono', 'Consolas', monospace;
+    --sans:    'IBM Plex Sans', 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; font-weight: 600; color: var(--accent); margin-right: 8px; flex-shrink: 0; }
+
+  input, select, button {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-family: var(--sans);
+    font-size: 13px;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  button { cursor: pointer; }
+  button:hover { background: var(--border); }
+
+  #search-input { width: 200px; }
+  #topic-input  { width: 160px; }
+
+  .presets { display: flex; gap: 4px; }
+  .preset-btn { padding: 4px 8px; font-size: 12px; }
+  .preset-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  #live-toggle { padding: 5px 12px; }
+  #live-toggle.live-on  { background: var(--green); color: #000; border-color: var(--green); }
+  #live-toggle.live-off { background: var(--surface); }
+
+  #clear-btn { color: var(--dim); }
+
+  #stats-bar {
+    font-size: 11px;
+    color: var(--dim);
+    padding: 4px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 16px;
+  }
+
+  #log-container {
+    height: calc(100vh - 80px);
+    overflow-y: auto;
+    padding: 8px 16px;
+  }
+
+  .log-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid #1e1e1e;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    animation: fadein 0.2s ease;
+  }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+  .log-ts      { color: var(--dim); white-space: nowrap; flex-shrink: 0; }
+  .log-topic   { white-space: nowrap; flex-shrink: 0; font-weight: 500; }
+  .log-payload { color: #c6c6c6; word-break: break-all; }
+  .log-badge   { font-size: 9px; background: var(--orange); color: #000;
+                 padding: 1px 4px; border-radius: 2px; flex-shrink: 0; }
+
+  #load-more {
+    display: block;
+    width: 100%;
+    margin: 12px 0;
+    padding: 8px;
+    text-align: center;
+    font-size: 13px;
+  }
+
+  .empty-state {
+    color: var(--dim);
+    text-align: center;
+    padding: 60px 16px;
+    font-size: 13px;
+  }
+  .empty-state h2 { font-size: 16px; margin-bottom: 8px; }
+
+  .error-msg {
+    background: #2d1515;
+    border: 1px solid var(--red);
+    color: var(--red);
+    padding: 8px 12px;
+    border-radius: 3px;
+    margin: 8px 0;
+    font-size: 12px;
+  }
+
+  #live-indicator {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--green);
+  }
+  #live-indicator.visible { display: flex; }
+  .live-dot {
+    width: 7px; height: 7px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mqlogs</h1>
+
+  <input id="search-input" type="text" placeholder="Search topic or payload…" autocomplete="off">
+  <input id="topic-input"  type="text" placeholder="Filter topic…" autocomplete="off">
+
+  <div class="presets">
+    <button class="preset-btn" data-h="1">1h</button>
+    <button class="preset-btn" data-h="24">24h</button>
+    <button class="preset-btn" data-h="168">7d</button>
+    <button class="preset-btn active" data-h="0">All</button>
+  </div>
+
+  <button id="live-toggle" class="live-on">Live ●</button>
+  <div id="live-indicator"><span class="live-dot"></span> connected</div>
+  <button id="clear-btn">Clear</button>
+</header>
+
+<div id="stats-bar">
+  <span id="stat-total">— messages</span>
+  <span id="stat-oldest"></span>
+</div>
+
+<div id="log-container">
+  <div class="empty-state" id="empty-state">
+    <h2>No messages yet</h2>
+    <p>Waiting for MQTT events…</p>
+  </div>
+</div>
+
+<script>
+// ── Colour hash (topic → hue) ──────────────────────────────────────────────
+function topicColor(topic) {
+  let h = 0;
+  for (let i = 0; i < topic.length; i++) h = (h * 31 + topic.charCodeAt(i)) & 0xffffffff;
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue},60%,65%)`;
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+let liveOn   = true;
+let eventSrc = null;
+let minId    = null;   // for keyset pagination (load more)
+let sinceTs  = null;   // epoch seconds, null = no filter
+
+const container  = document.getElementById("log-container");
+const emptyState = document.getElementById("empty-state");
+const loadMoreBtn = document.createElement("button");
+loadMoreBtn.id = "load-more";
+loadMoreBtn.className = "load-more";
+loadMoreBtn.textContent = "Load more";
+loadMoreBtn.onclick = loadMore;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function fmtTs(epoch) {
+  return new Date(epoch * 1000).toLocaleString(undefined, {
+    month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
+
+function getFilters() {
+  return {
+    q:     document.getElementById("search-input").value.trim(),
+    topic: document.getElementById("topic-input").value.trim(),
+  };
+}
+
+function buildRow(msg) {
+  const row = document.createElement("div");
+  row.className = "log-row";
+  row.dataset.id = msg.id;
+
+  const ts = document.createElement("span");
+  ts.className = "log-ts";
+  ts.textContent = fmtTs(msg.ts);
+
+  const topic = document.createElement("span");
+  topic.className = "log-topic";
+  topic.textContent = msg.topic;
+  topic.style.color = topicColor(msg.topic);
+
+  const payload = document.createElement("span");
+  payload.className = "log-payload";
+  payload.textContent = msg.payload;
+
+  row.appendChild(ts);
+  row.appendChild(topic);
+  if (msg.retain) {
+    const badge = document.createElement("span");
+    badge.className = "log-badge";
+    badge.textContent = "R";
+    row.appendChild(badge);
+  }
+  row.appendChild(payload);
+  return row;
+}
+
+function showEmpty(visible) {
+  emptyState.style.display = visible ? "block" : "none";
+}
+
+function showError(msg) {
+  const el = document.createElement("div");
+  el.className = "error-msg";
+  el.textContent = msg;
+  container.prepend(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+// ── Search / history ───────────────────────────────────────────────────────
+async function fetchHistory(appendBottom = false) {
+  const f = getFilters();
+  const params = new URLSearchParams({ limit: 100 });
+  if (f.q)     params.set("q",     f.q);
+  if (f.topic) params.set("topic", f.topic);
+  if (sinceTs) params.set("since", sinceTs);
+  if (appendBottom && minId) params.set("before_id", minId);
+
+  try {
+    const res  = await fetch(`/api/search?${params}`);
+    const rows = await res.json();
+
+    if (!appendBottom) {
+      // Clear existing rows (keep empty-state)
+      [...container.querySelectorAll(".log-row, #load-more, .error-msg")].forEach(el => el.remove());
+      minId = null;
+    }
+
+    if (rows.length === 0 && !appendBottom) {
+      showEmpty(true);
+      return;
+    }
+    showEmpty(false);
+
+    rows.forEach(msg => {
+      const row = buildRow(msg);
+      if (appendBottom) {
+        container.insertBefore(row, loadMoreBtn);
+      } else {
+        container.appendChild(row);
+      }
+      if (minId === null || msg.id < minId) minId = msg.id;
+    });
+
+    // Show load-more if we got a full page
+    if (rows.length === 100) {
+      container.appendChild(loadMoreBtn);
+    } else {
+      loadMoreBtn.remove();
+    }
+  } catch (e) {
+    showError("Search error: " + e.message);
+  }
+}
+
+function loadMore() {
+  fetchHistory(true);
+}
+
+// ── Live SSE ───────────────────────────────────────────────────────────────
+function connectSSE() {
+  if (eventSrc) { eventSrc.close(); eventSrc = null; }
+  const f = getFilters();
+  const params = new URLSearchParams();
+  if (f.q)     params.set("q",     f.q);
+  if (f.topic) params.set("topic", f.topic);
+
+  eventSrc = new EventSource(`/api/stream?${params}`);
+  eventSrc.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "connected") {
+      document.getElementById("live-indicator").classList.add("visible");
+      return;
+    }
+    // Check time filter client-side
+    if (sinceTs && msg.ts < sinceTs) return;
+
+    showEmpty(false);
+    const row = buildRow(msg);
+    // Prepend at top
+    const firstRow = container.querySelector(".log-row");
+    if (firstRow) {
+      container.insertBefore(row, firstRow);
+    } else {
+      container.insertBefore(row, container.firstChild);
+    }
+  };
+  eventSrc.onerror = () => {
+    document.getElementById("live-indicator").classList.remove("visible");
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+function disconnectSSE() {
+  if (eventSrc) { eventSrc.close(); eventSrc = null; }
+  document.getElementById("live-indicator").classList.remove("visible");
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────
+async function refreshStats() {
+  try {
+    const res  = await fetch("/api/stats");
+    const data = await res.json();
+    document.getElementById("stat-total").textContent =
+      `${data.total.toLocaleString()} messages`;
+    document.getElementById("stat-oldest").textContent =
+      data.oldest ? `oldest: ${fmtTs(data.oldest)}` : "";
+  } catch (_) {}
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+document.getElementById("live-toggle").addEventListener("click", function() {
+  liveOn = !liveOn;
+  if (liveOn) {
+    this.textContent = "Live ●";
+    this.className = "live-on";
+    connectSSE();
+  } else {
+    this.textContent = "Live ○";
+    this.className = "live-off";
+    disconnectSSE();
+  }
+});
+
+document.getElementById("clear-btn").addEventListener("click", () => {
+  [...container.querySelectorAll(".log-row, #load-more, .error-msg")].forEach(el => el.remove());
+  showEmpty(true);
+  minId = null;
+});
+
+// Preset buttons
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
+    this.classList.add("active");
+    const h = parseInt(this.dataset.h);
+    sinceTs = h ? (Date.now() / 1000 - h * 3600) : null;
+    fetchHistory();
+  });
+});
+
+// Search on Enter / topic on Enter
+["search-input", "topic-input"].forEach(id => {
+  document.getElementById(id).addEventListener("keydown", e => {
+    if (e.key === "Enter") fetchHistory();
+  });
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+fetchHistory();
+connectSSE();
+refreshStats();
+setInterval(refreshStats, 30000);
+</script>
+</body>
+</html>
