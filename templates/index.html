@@ -98,13 +98,9 @@
                  padding: 1px 4px; border-radius: 2px; flex-shrink: 0; }
 
   @media (max-width: 640px) {
-    .log-row {
-      flex-wrap: wrap;
-      gap: 2px 6px;
-    }
-    .log-ts    { font-size: 11px; width: 100%; }
-    .log-topic { max-width: 85vw; }
-    .log-payload { width: 100%; padding-left: 0; color: #a8a8a8; }
+    .log-row     { flex-wrap: wrap; }
+    .log-topic   { max-width: calc(100vw - 160px); }
+    .log-payload { flex: 1; min-width: 0; word-break: break-word; }
     #log-container { padding: 6px 10px; }
     header { padding: 8px 10px; gap: 8px; }
     #search-input { width: 100%; }
